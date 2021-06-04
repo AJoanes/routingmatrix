@@ -2,90 +2,88 @@ const fs = require("fs");
 const fetch = require("node-fetch");
 const ProgressBar = require("progress");
 const locations = require("./locations.json");
+const normalizeArray = require("./normalizeMatrix");
 
-const API_KEY = "JGtxidSHhCk8fMBBGqtyQE32l0mU0wXv";
-const API_URL = "http://www.mapquestapi.com/directions/v2/routematrix";
+const PROFILE_NAME = "van";
+const API_KEY = "5b3ce3597851110001cf6248ee93cb8e24ca452a8e82ff2323c393fd";
+const API_URL =
+	"https://api.openrouteservice.org/v2/matrix/driving-car?profile=driving-car";
 
 main();
 async function main() {
-  const parsedLocations = parseLocations(locations);
-  const batchedLocations = batchArray(parsedLocations, 50);
+	const parsedLocations = parseLocations(locations);
+	const batchedLocations = batchArray(parsedLocations, 20);
 
-  const bar = new ProgressBar("  downloading [:bar] :rate/bps :percent :etas", {
-    complete: "=",
-    incomplete: " ",
-    width: 20,
-    total: parsedLocations.length * batchedLocations.length,
-  });
+	const bar = new ProgressBar("  downloading [:bar] :rate/bps :percent :etas", {
+		complete: "=",
+		incomplete: " ",
+		width: 20,
+		total: parsedLocations.length,
+	});
 
-  const distancesArray = [];
-  const timesArray = [];
+	const distancesArray = [];
+	const timesArray = [];
 
-  for (let i = 0; i < parsedLocations.length; i++) {
-    const batchDistance = [0];
-    const batchTime = [0];
-    for (let j = 0; j < batchedLocations.length; j++) {
-      // Remove equal value from array
-      const index = batchedLocations[j].findIndex(
-        (l) => l === parsedLocations[i]
-      );
-      const parsedCopy = [...batchedLocations[j]];
-      index > -1 ? parsedCopy.splice(index, 1) : null;
+	for (let i = 0; i < parsedLocations.length; i++) {
+		const requestBody = {
+			metrics: ["distance", "duration"],
+			locations: parsedLocations,
+			destinations: [i],
+		};
+		const response = await getApiResponse(requestBody);
 
-      const requestBody = {
-        locations: [parsedLocations[i], ...parsedCopy],
-      };
-      const { distance, time } = await getApiResponse(requestBody);
+		distancesArray.push(...normalizeArray(response.distance));
+		timesArray.push(...normalizeArray(response.time));
 
-      batchDistance.push(...distance);
-      batchTime.push(...time);
+		bar.tick();
+	}
 
-      bar.tick();
-    }
-
-    distancesArray.push(...batchDistance);
-    timesArray.push(...batchTime);
-  }
-
-  fs.writeFileSync(
-    "route_matrix.json",
-    JSON.stringify({ distances: distancesArray, travelTimes: timesArray })
-  );
+	fs.writeFileSync(
+		"route_matrix.json",
+		JSON.stringify({
+			distances: distancesArray,
+			travelTimes: timesArray,
+			profile: PROFILE_NAME,
+		})
+	);
 }
 
-function batchArray(array = [], batchSize = 100) {
-  const arr = [];
-  for (let i = 0; i < array.length; i += batchSize) {
-    arr.push(array.slice(i, i + batchSize));
-  }
-  return arr;
+function batchArray(array = [], batchSize = 20) {
+	const arr = [];
+	for (let i = 0; i < array.length; i += batchSize) {
+		arr.push(array.slice(i, i + batchSize));
+	}
+	return arr;
 }
 
 async function getApiResponse(requestBody) {
-  try {
-    const response = await fetch(`${API_URL}?key=${API_KEY}`, {
-      method: "POST",
-      body: JSON.stringify(requestBody),
-    });
+	try {
+		const response = await fetch(`${API_URL}`, {
+			method: "POST",
+			body: JSON.stringify(requestBody),
+			headers: {
+				"Content-Type": "application/json",
+				Authorization: API_KEY,
+			},
+		});
 
-    const parsedResponse = await response.json();
-    console.log(response.status);
-    return {
-      distance: parsedResponse?.distance?.slice(1) ?? [],
-      time: parsedResponse?.time?.slice(1) ?? [],
-      // locations: parsedResponse?.locations?
-    };
-  } catch (error) {
-    console.error(error);
-    return {
-      distance: [],
-      time: [],
-    };
-  }
+		const parsedResponse = await response.json();
+		// console.log(parsedResponse);
+		return {
+			distance: parsedResponse?.distances.flat(),
+			time: parsedResponse?.durations.flat(),
+		};
+	} catch (error) {
+		console.error(error);
+		return {
+			distance: [],
+			time: [],
+		};
+	}
 }
 
 function parseLocations(locations) {
-  return locations.map((location) => {
-    return `${location.lat},${location.lng}`;
-  });
+	return locations.map((location) => {
+		return [location.lng, location.lat];
+	});
 }
