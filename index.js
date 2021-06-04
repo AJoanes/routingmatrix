@@ -2,7 +2,9 @@ const fs = require("fs");
 const fetch = require("node-fetch");
 const ProgressBar = require("progress");
 const locations = require("./locations.json");
+const normalizeArray = require("./normalizeMatrix");
 
+const PROFILE_NAME = "van";
 const API_KEY = "5b3ce3597851110001cf6248ee93cb8e24ca452a8e82ff2323c393fd";
 const API_URL =
 	"https://api.openrouteservice.org/v2/matrix/driving-car?profile=driving-car";
@@ -30,15 +32,19 @@ async function main() {
 		};
 		const response = await getApiResponse(requestBody);
 
-		distancesArray.push(...response.distance);
-		timesArray.push(...response.time);
+		distancesArray.push(...normalizeArray(response.distance));
+		timesArray.push(...normalizeArray(response.time));
 
 		bar.tick();
 	}
 
 	fs.writeFileSync(
 		"route_matrix.json",
-		JSON.stringify({ distances: distancesArray, travelTimes: timesArray })
+		JSON.stringify({
+			distances: distancesArray,
+			travelTimes: timesArray,
+			profile: PROFILE_NAME,
+		})
 	);
 }
 
